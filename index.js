@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql2');
 const bodyParser = require('body-parser');
 const config = require('./config'); // Importiere die Konfiguration
+const bcrypt = require('bcrypt'); // Für Passwort-Hashing
 
 // App initialisieren
 const app = express();
@@ -213,6 +214,68 @@ app.get('/feinstaub/ort/:ort', (req, res) => {
             res.status(404).json({ message: 'Keine Feinstaubdaten für diesen Ort gefunden' }); // Kein Ergebnis
         } else {
             res.json(results); // Ergebnisse zurückgeben
+        }
+    });
+});
+
+// POST Registrierung
+app.post('/register', (req, res) => {
+    const { Vorname, Nachname, Email, Passwort, Brokername } = req.body;
+
+    // Prüfen, ob alle Felder vorhanden sind
+    if (!Vorname || !Nachname || !Email || !Passwort || !Brokername) {
+        return res.status(400).json({ message: 'Bitte alle Felder ausfüllen' });
+    }
+
+    // Prüfen, ob die E-Mail schon registriert ist
+    const checkEmailSql = 'SELECT * FROM user WHERE Email = ?';
+    db.query(checkEmailSql, [Email], (err, results) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        if (results.length > 0) {
+            return res.status(409).json({ message: 'E-Mail bereits registriert' });
+        }
+
+        // Passwort hashen
+        bcrypt.hash(Passwort, 10, (err, hashedPassword) => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            // Benutzer in die Datenbank einfügen
+            const insertSql = `
+                INSERT INTO user (Vorname, Nachname, Email, Passwort, Brokername) 
+                VALUES (?, ?, ?, ?, ?)
+            `;
+            db.query(insertSql, [Vorname, Nachname, Email, hashedPassword, Brokername], (err, results) => {
+                if (err) {
+                    return res.status(500).json({ error: err.message });
+                }
+                res.status(201).json({ message: 'Benutzer registriert', UserID: results.insertId });
+            });
+        });
+    });
+});
+
+
+// POST Login
+app.post('/login', (req, res) => {
+    const { Email, Passwort } = req.body;
+
+    // SQL-Abfrage zur Überprüfung von Email und Passwort
+    const sql = 'SELECT UserID, Vorname, Nachname, Email FROM user WHERE Email = ? AND Passwort = ?';
+
+    db.query(sql, [Email, Passwort], (err, results) => {
+        if (err) {
+            res.status(500).json({ error: 'Interner Serverfehler' });
+        } else if (results.length === 0) {
+            res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+        } else {
+            const user = results[0]; // Benutzerinformationen aus der Datenbank
+            res.json({
+                message: 'Login erfolgreich',
+            });
         }
     });
 });
