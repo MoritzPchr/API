@@ -92,16 +92,18 @@ app.post('/user', (req, res) => {
 
 // POST Client
 app.post('/client', (req, res) => {
-    const { UserID } = req.body;
-    const sql = 'INSERT INTO client (UserID) VALUES (?)';
-    db.query(sql, [UserID], (err, results) => {
+    const { UserID, Ort } = req.body; // UserID und Ort werden vom Client übergeben
+    const sql = 'INSERT INTO client (UserID, Ort) VALUES (?, ?)';
+    
+    db.query(sql, [UserID, Ort], (err, results) => {
         if (err) {
-            res.status(500).json({ error: err.message });
+            res.status(500).json({ error: err.message }); // Fehlerbehandlung
         } else {
-            res.status(201).json({ message: 'Client erstellt', ClientID: results.insertId });
+            res.status(201).json({ message: 'Client erstellt', ClientID: results.insertId }); // Erfolgreiches Einfügen
         }
     });
 });
+
 
 // PUT User
 app.put('/user/:id', (req, res) => {
@@ -122,15 +124,17 @@ app.put('/user/:id', (req, res) => {
 // PUT Client
 app.put('/client/:id', (req, res) => {
     const clientId = req.params.id;
-    const { UserID } = req.body;
-    const sql = 'UPDATE client SET UserID = ? WHERE ClientID = ?';
-    db.query(sql, [UserID, clientId], (err, results) => {
+    const { UserID, Ort } = req.body; // UserID und Ort werden jetzt vom Client gesendet
+
+    // SQL-Abfrage, die sowohl UserID als auch Ort aktualisiert
+    const sql = 'UPDATE client SET UserID = ?, Ort = ? WHERE ClientID = ?';
+    db.query(sql, [UserID, Ort, clientId], (err, results) => {
         if (err) {
-            res.status(500).json({ error: err.message });
+            res.status(500).json({ error: err.message }); // Fehlerbehandlung
         } else if (results.affectedRows === 0) {
-            res.status(404).json({ error: 'Client nicht gefunden' });
+            res.status(404).json({ error: 'Client nicht gefunden' }); // Kein Eintrag mit der ID gefunden
         } else {
-            res.json({ message: 'Client aktualisiert' });
+            res.json({ message: 'Client aktualisiert' }); // Erfolgreiches Update
         }
     });
 });
@@ -162,6 +166,58 @@ app.delete('/client/:id', (req, res) => {
         }
     });
 });
+
+
+// Feinstaubdaten nach ClientID filtern
+app.get('/feinstaubwerte/client/:ClientID', (req, res) => {
+    const { ClientID } = req.params;
+
+    // Überprüfen, ob die ClientID eine gültige Zahl ist
+    if (isNaN(ClientID)) {
+        return res.status(400).json({ error: 'Ungültige ClientID.' });
+    }
+
+    // SQL-Abfrage
+    db.query(
+        'SELECT * FROM feinstaubwert WHERE ClientID = ? ORDER BY Zeitstempel DESC',
+        [ClientID],
+        (err, results) => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+
+            // Überprüfen, ob Daten gefunden wurden
+            if (results.length === 0) {
+                return res.status(404).json({ error: 'Keine Feinstaubwerte für die angegebene ClientID gefunden.' });
+            }
+
+            res.json(results);
+        }
+    );
+});
+
+// GET Feinstaubdaten nach Ort
+app.get('/feinstaub/ort/:ort', (req, res) => {
+    const ort = req.params.ort; // Ort aus den URL-Parametern
+    const sql = `
+        SELECT f.WertID, f.PM1.0, f.PM2.5, f.PM10, f.Zeitstempel, c.Ort 
+        FROM feinstaubwert AS f
+        INNER JOIN client AS c ON f.ClientID = c.ClientID
+        WHERE c.Ort = ?
+    `;
+
+    db.query(sql, [ort], (err, results) => {
+        if (err) {
+            res.status(500).json({ error: err.message }); // Fehlerbehandlung
+        } else if (results.length === 0) {
+            res.status(404).json({ message: 'Keine Feinstaubdaten für diesen Ort gefunden' }); // Kein Ergebnis
+        } else {
+            res.json(results); // Ergebnisse zurückgeben
+        }
+    });
+});
+
+
 
 // Server starten
 const PORT = process.env.PORT || 3000;
