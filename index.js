@@ -123,19 +123,41 @@ app.put('/user/:id', (req, res) => {
 });
 
 // PUT Client
-app.put('/client/:id', (req, res) => {
+app.put('/client/:id', async (req, res) => {
     const clientId = req.params.id;
-    const { UserID, Ort } = req.body; // UserID und Ort werden jetzt vom Client gesendet
+    const { UserID, Ort, Passwort } = req.body; // Passwort wird jetzt auch vom Client gesendet
 
-    // SQL-Abfrage, die sowohl UserID als auch Ort aktualisiert
-    const sql = 'UPDATE client SET UserID = ?, Ort = ? WHERE ClientID = ?';
-    db.query(sql, [UserID, Ort, clientId], (err, results) => {
+    // Wir überprüfen, ob ein Passwort in der Anfrage enthalten ist
+    let hashedPassword = null;
+    if (Passwort) {
+        try {
+            // Passwort wird gehasht, wenn es geändert wird
+            const salt = await bcrypt.genSalt(10);  // Erzeugt ein Salt mit einem Faktor von 10
+            hashedPassword = await bcrypt.hash(Passwort, salt);
+        } catch (error) {
+            return res.status(500).json({ error: 'Fehler beim Hashen des Passworts' });
+        }
+    }
+
+    // SQL-Abfrage, die UserID, Ort und optional das Passwort aktualisiert
+    let sql = 'UPDATE client SET UserID = ?, Ort = ?';
+    const params = [UserID, Ort];
+    
+    if (hashedPassword) {
+        sql += ', Passwort = ?'; // Passwort hinzufügen, wenn es gehasht wurde
+        params.push(hashedPassword); // Gehashtes Passwort in die Parameter einfügen
+    }
+    
+    sql += ' WHERE ClientID = ?';
+    params.push(clientId); // Füge die ClientID zu den Parametern hinzu
+
+    db.query(sql, params, (err, results) => {
         if (err) {
             res.status(500).json({ error: err.message }); // Fehlerbehandlung
         } else if (results.affectedRows === 0) {
             res.status(404).json({ error: 'Client nicht gefunden' }); // Kein Eintrag mit der ID gefunden
         } else {
-            res.json({ message: 'Client aktualisiert' }); // Erfolgreiches Update
+            res.json({ message: 'Client erfolgreich aktualisiert' }); // Erfolgreiches Update
         }
     });
 });
@@ -263,22 +285,39 @@ app.post('/register', (req, res) => {
 app.post('/login', (req, res) => {
     const { Email, Passwort } = req.body;
 
-    // SQL-Abfrage zur Überprüfung von Email und Passwort
-    const sql = 'SELECT UserID, Vorname, Nachname, Email FROM user WHERE Email = ? AND Passwort = ?';
+    // SQL-Abfrage, um den Benutzer anhand der E-Mail zu finden
+    const sql = 'SELECT UserID, Vorname, Nachname, Email, Passwort FROM user WHERE Email = ?';
 
-    db.query(sql, [Email, Passwort], (err, results) => {
+    db.query(sql, [Email], (err, results) => {
         if (err) {
-            res.status(500).json({ error: 'Interner Serverfehler' });
-        } else if (results.length === 0) {
-            res.status(401).json({ error: 'Ungültige Anmeldedaten' });
-        } else {
-            const user = results[0]; // Benutzerinformationen aus der Datenbank
+            return res.status(500).json({ error: 'Interner Serverfehler' });
+        }
+
+        // Prüfen, ob der Benutzer existiert
+        if (results.length === 0) {
+            return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+        }
+
+        const user = results[0];
+
+        // Passwort prüfen
+        bcrypt.compare(Passwort, user.Passwort, (err, isMatch) => {
+            if (err) {
+                return res.status(500).json({ error: 'Interner Serverfehler' });
+            }
+
+            if (!isMatch) {
+                return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+            }
+
+            // Erfolgreiche Anmeldung
             res.json({
                 message: 'Login erfolgreich',
             });
-        }
+        });
     });
 });
+
 
 
 
