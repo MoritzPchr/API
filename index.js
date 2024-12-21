@@ -79,16 +79,29 @@ app.get('/client/:id', (req, res) => {
 });
 
 // POST User
-app.post('/user', (req, res) => {
+app.post('/user', async (req, res) => {
     const { Vorname, Nachname, Email, Passwort, Brokername } = req.body;
-    const sql = 'INSERT INTO user (Vorname, Nachname, Email, Passwort, Brokername) VALUES (?, ?, ?, ?, ?)';
-    db.query(sql, [Vorname, Nachname, Email, Passwort, Brokername], (err, results) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-        } else {
-            res.status(201).json({ message: 'User erstellt', UserID: results.insertId });
+
+    try {
+        // Prüfen, ob die E-Mail bereits registriert ist
+        const [emailCheck] = await db.promise().query('SELECT * FROM user WHERE Email = ?', [Email]);
+        if (emailCheck.length > 0) {
+            return res.status(409).json({ message: 'E-Mail bereits registriert' });
         }
-    });
+
+        // Passwort hashen
+        const hashedPassword = await bcrypt.hash(Passwort, 10);
+
+        // Benutzer einfügen
+        const [result] = await db.promise().query(
+            'INSERT INTO user (Vorname, Nachname, Email, Passwort, Brokername) VALUES (?, ?, ?, ?, ?)',
+            [Vorname, Nachname, Email, hashedPassword, Brokername]
+        );
+
+        res.status(201).json({ message: 'Benutzer erstellt', UserID: result.insertId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // POST Client
@@ -107,20 +120,56 @@ app.post('/client', (req, res) => {
 
 
 // PUT User
-app.put('/user/:id', (req, res) => {
+app.put('/user/:id', async (req, res) => {
     const userId = req.params.id;
     const { Vorname, Nachname, Email, Passwort, Brokername } = req.body;
-    const sql = 'UPDATE user SET Vorname = ?, Nachname = ?, Email = ?, Passwort = ?, Brokername = ? WHERE UserID = ?';
-    db.query(sql, [Vorname, Nachname, Email, Passwort, Brokername, userId], (err, results) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-        } else if (results.affectedRows === 0) {
-            res.status(404).json({ error: 'User nicht gefunden' });
-        } else {
-            res.json({ message: 'User aktualisiert' });
+
+    try {
+        // Prüfen, ob die E-Mail bereits von einem anderen Benutzer genutzt wird
+        if (Email) {
+            const [emailCheck] = await db.promise().query(
+                'SELECT * FROM user WHERE Email = ? AND UserID != ?',
+                [Email, userId]
+            );
+            if (emailCheck.length > 0) {
+                return res.status(409).json({ message: 'E-Mail bereits registriert' });
+            }
         }
-    });
+
+        // Passwort hashen, falls vorhanden
+        let hashedPassword = null;
+        if (Passwort) {
+            hashedPassword = await bcrypt.hash(Passwort, 10);
+        }
+
+        // Benutzer aktualisieren
+        const updateQuery = `
+            UPDATE user 
+            SET Vorname = ?, Nachname = ?, Email = ?, ${Passwort ? 'Passwort = ?,' : ''} Brokername = ? 
+            WHERE UserID = ?
+        `;
+
+        const params = [
+            Vorname,
+            Nachname,
+            Email,
+            ...(Passwort ? [hashedPassword] : []),
+            Brokername,
+            userId,
+        ];
+
+        const [result] = await db.promise().query(updateQuery, params);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Benutzer nicht gefunden' });
+        }
+
+        res.json({ message: 'Benutzer aktualisiert' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
+
 
 // PUT Client
 app.put('/client/:id', async (req, res) => {
