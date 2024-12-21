@@ -19,7 +19,8 @@ db.connect((err) => {
     }
 });
 
-// Endpunkte
+// Endpunkte:
+//GET all Clients
 app.get('/clients', (req, res) => {
     db.query('SELECT * FROM client', (err, results) => {
         if (err) {
@@ -30,6 +31,7 @@ app.get('/clients', (req, res) => {
     });
 });
 
+//GET all Users
 app.get('/users', (req, res) => {
     db.query('SELECT * FROM user', (err, results) => {
         if (err) {
@@ -40,6 +42,7 @@ app.get('/users', (req, res) => {
     });
 });
 
+//GET all Feinstaubwerte
 app.get('/feinstaubwerte', (req, res) => {
     db.query('SELECT * FROM feinstaubwert', (err, results) => {
         if (err) {
@@ -106,17 +109,30 @@ app.post('/user', async (req, res) => {
 
 // POST Client
 app.post('/client', (req, res) => {
-    const { UserID, Ort } = req.body; // UserID und Ort werden vom Client übergeben
-    const sql = 'INSERT INTO client (UserID, Ort) VALUES (?, ?)';
-    
-    db.query(sql, [UserID, Ort], (err, results) => {
-        if (err) {
-            res.status(500).json({ error: err.message }); // Fehlerbehandlung
-        } else {
-            res.status(201).json({ message: 'Client erstellt', ClientID: results.insertId }); // Erfolgreiches Einfügen
+    const { UserID, Ort } = req.body;
+
+    // Überprüfen, ob der Benutzer existiert
+    const checkUserSql = 'SELECT UserID FROM user WHERE UserID = ?';
+    db.query(checkUserSql, [UserID], (userErr, userResults) => {
+        if (userErr) {
+            return res.status(500).json({ error: userErr.message }); // Fehlerbehandlung
         }
+        if (userResults.length === 0) {
+            return res.status(404).json({ error: 'Benutzer nicht gefunden' }); // UserID existiert nicht
+        }
+
+        // Wenn der Benutzer existiert, füge den neuen Client ein
+        const insertSql = 'INSERT INTO client (UserID, Ort) VALUES (?, ?)';
+        db.query(insertSql, [UserID, Ort], (insertErr, insertResults) => {
+            if (insertErr) {
+                res.status(500).json({ error: insertErr.message }); // Fehlerbehandlung
+            } else {
+                res.status(201).json({ message: 'Client erstellt', ClientID: insertResults.insertId }); // Erfolgreiches Einfügen
+            }
+        });
     });
 });
+
 
 
 // PUT User
@@ -170,46 +186,35 @@ app.put('/user/:id', async (req, res) => {
     }
 });
 
-
 // PUT Client
-app.put('/client/:id', async (req, res) => {
+app.put('/client/:id', (req, res) => {
     const clientId = req.params.id;
-    const { UserID, Ort, Passwort } = req.body; // Passwort wird jetzt auch vom Client gesendet
+    const { UserID, Ort } = req.body;
 
-    // Wir überprüfen, ob ein Passwort in der Anfrage enthalten ist
-    let hashedPassword = null;
-    if (Passwort) {
-        try {
-            // Passwort wird gehasht, wenn es geändert wird
-            const salt = await bcrypt.genSalt(10);  // Erzeugt ein Salt mit einem Faktor von 10
-            hashedPassword = await bcrypt.hash(Passwort, salt);
-        } catch (error) {
-            return res.status(500).json({ error: 'Fehler beim Hashen des Passworts' });
+    // Überprüfen, ob der Benutzer existiert
+    const checkUserSql = 'SELECT UserID FROM user WHERE UserID = ?';
+    db.query(checkUserSql, [UserID], (userErr, userResults) => {
+        if (userErr) {
+            return res.status(500).json({ error: userErr.message }); // Fehlerbehandlung
         }
-    }
-
-    // SQL-Abfrage, die UserID, Ort und optional das Passwort aktualisiert
-    let sql = 'UPDATE client SET UserID = ?, Ort = ?';
-    const params = [UserID, Ort];
-    
-    if (hashedPassword) {
-        sql += ', Passwort = ?'; // Passwort hinzufügen, wenn es gehasht wurde
-        params.push(hashedPassword); // Gehashtes Passwort in die Parameter einfügen
-    }
-    
-    sql += ' WHERE ClientID = ?';
-    params.push(clientId); // Füge die ClientID zu den Parametern hinzu
-
-    db.query(sql, params, (err, results) => {
-        if (err) {
-            res.status(500).json({ error: err.message }); // Fehlerbehandlung
-        } else if (results.affectedRows === 0) {
-            res.status(404).json({ error: 'Client nicht gefunden' }); // Kein Eintrag mit der ID gefunden
-        } else {
-            res.json({ message: 'Client erfolgreich aktualisiert' }); // Erfolgreiches Update
+        if (userResults.length === 0) {
+            return res.status(404).json({ error: 'Benutzer nicht gefunden' }); // UserID existiert nicht
         }
+
+        // Wenn der Benutzer existiert, aktualisiere den Client
+        const updateSql = 'UPDATE client SET UserID = ?, Ort = ? WHERE ClientID = ?';
+        db.query(updateSql, [UserID, Ort, clientId], (updateErr, updateResults) => {
+            if (updateErr) {
+                res.status(500).json({ error: updateErr.message }); // Fehlerbehandlung
+            } else if (updateResults.affectedRows === 0) {
+                res.status(404).json({ error: 'Client nicht gefunden' }); // Kein Eintrag mit der ID gefunden
+            } else {
+                res.json({ message: 'Client erfolgreich aktualisiert' }); // Erfolgreiches Update
+            }
+        });
     });
 });
+
 
 // DELETE User
 app.delete('/user/:id', (req, res) => {
@@ -370,7 +375,7 @@ app.post('/login', (req, res) => {
 
 
 
-// Server starten
+//Lokalen Server starten
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server läuft auf http://localhost:${PORT}`);
