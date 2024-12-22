@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2');
 const bodyParser = require('body-parser');
+const rateLimit = require('express-rate-limit'); //Für Rate-Limiting
 const config = require('./config'); // Importiere die Konfiguration
 const bcrypt = require('bcrypt'); // Für Passwort-Hashing
 
@@ -18,6 +19,17 @@ db.connect((err) => {
         console.log('Mit der Datenbank verbunden!');
     }
 });
+
+// --- RATE LIMITING gegen DoS-Angriffe
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 Minuten
+    max: 100, // Maximal 100 Anfragen pro IP
+    message: 'Zu viele Anfragen von dieser IP. Bitte versuchen Sie es später erneut.',
+});
+
+app.use(limiter);
+
+
 
 // Endpunkte:
 //GET all Clients
