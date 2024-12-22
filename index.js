@@ -215,34 +215,56 @@ app.put('/client/:id', (req, res) => {
     });
 });
 
-
-// DELETE User
+//DELETE USER
 app.delete('/user/:id', (req, res) => {
     const userId = req.params.id;
-    db.query('DELETE FROM user WHERE UserID = ?', [userId], (err, results) => {
+
+    // Prüfe, ob noch Clients für den User existieren
+    const checkClients = 'SELECT COUNT(*) AS clientCount FROM client WHERE UserID = ?';
+
+    db.query(checkClients, [userId], (err, results) => {
         if (err) {
-            res.status(500).json({ error: err.message });
-        } else if (results.affectedRows === 0) {
-            res.status(404).json({ error: 'User nicht gefunden' });
-        } else {
-            res.json({ message: 'User gelöscht' });
+            return res.status(500).json({ error: err.message });
         }
+
+        const clientCount = results[0].clientCount;
+
+        if (clientCount > 0) {
+            return res.status(400).json({
+                error: 'User kann nicht gelöscht werden, solange noch Clients mit ihm verknüpft sind',
+            });
+        }
+
+        // Lösche den User, da keine Clients mehr verknüpft sind
+        db.query('DELETE FROM user WHERE UserID = ?', [userId], (deleteErr, deleteResults) => {
+            if (deleteErr) {
+                res.status(500).json({ error: deleteErr.message });
+            } else if (deleteResults.affectedRows === 0) {
+                res.status(404).json({ error: 'User nicht gefunden' });
+            } else {
+                res.json({ message: 'User gelöscht' });
+            }
+        });
     });
 });
 
-// DELETE Client
+
+//DELETE CLIENT
 app.delete('/client/:id', (req, res) => {
     const clientId = req.params.id;
+
+    // Lösche den Client, Feinstaubwerte werden automatisch gelöscht (ON DELETE CASCADE)
     db.query('DELETE FROM client WHERE ClientID = ?', [clientId], (err, results) => {
         if (err) {
             res.status(500).json({ error: err.message });
         } else if (results.affectedRows === 0) {
             res.status(404).json({ error: 'Client nicht gefunden' });
         } else {
-            res.json({ message: 'Client gelöscht' });
+            res.json({ message: 'Client und zugehörige Feinstaubwerte gelöscht' });
         }
     });
 });
+
 
 
 // Feinstaubdaten nach ClientID filtern
