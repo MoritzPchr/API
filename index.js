@@ -10,7 +10,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // Datenbankverbindung
-const db = mysql.createConnection(config.db); // Nutze config.db für die Verbindung
+const db = mysql.createConnection(config.db); // Nutze config.db für die Verbindung, um DB-Verbindung zu verstecken
 
 db.connect((err) => {
     if (err) {
@@ -22,7 +22,7 @@ db.connect((err) => {
 
 // --- RATE LIMITING gegen DoS-Angriffe
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 Minuten
+    windowMs: 15 * 60 * 1000, // 15 Minuten --> Zeitraum in ms
     max: 100, // Maximal 100 Anfragen pro IP
     message: 'Zu viele Anfragen von dieser IP. Bitte versuchen Sie es später erneut.',
 });
@@ -36,7 +36,7 @@ app.use(limiter);
 app.get('/clients', (req, res) => {
     db.query('SELECT * FROM client', (err, results) => {
         if (err) {
-            res.status(500).json({ error: err.message });
+            res.status(500).json({ error: err.message }); //Code 500 ist ein Sammelfehler
         } else {
             res.json(results);
         }
@@ -68,11 +68,11 @@ app.get('/feinstaubwerte', (req, res) => {
 // GET User by ID
 app.get('/user/:id', (req, res) => {
     const userId = req.params.id;
-    db.query('SELECT * FROM user WHERE UserID = ?', [userId], (err, results) => {
+    db.query('SELECT * FROM user WHERE UserID = ?', [userId], (err, results) => { //Platzhalte ? schütz vor SQL-Injeciton
         if (err) {
             res.status(500).json({ error: err.message });
         } else if (results.length === 0) {
-            res.status(404).json({ error: 'User nicht gefunden' });
+            res.status(404).json({ error: 'User nicht gefunden' }); //Code 404 wenn etwas nicht gefunden wurde
         } else {
             res.json(results[0]);
         }
@@ -95,17 +95,17 @@ app.get('/client/:id', (req, res) => {
 
 // POST User
 app.post('/user', async (req, res) => {
-    const { Vorname, Nachname, Email, Passwort, Brokername } = req.body;
+    const { Vorname, Nachname, Email, Passwort, Brokername } = req.body; //Daten aus http-body
 
     try {
         // Prüfen, ob die E-Mail bereits registriert ist
         const [emailCheck] = await db.promise().query('SELECT * FROM user WHERE Email = ?', [Email]);
         if (emailCheck.length > 0) {
-            return res.status(409).json({ message: 'E-Mail bereits registriert' });
+            return res.status(409).json({ message: 'E-Mail bereits registriert' }); //409: Ressource existiert schon
         }
 
         // Passwort hashen
-        const hashedPassword = await bcrypt.hash(Passwort, 10);
+        const hashedPassword = await bcrypt.hash(Passwort, 10); //Salt 10 (10 Runden)
 
         // Benutzer einfügen
         const [result] = await db.promise().query(
@@ -113,7 +113,7 @@ app.post('/user', async (req, res) => {
             [Vorname, Nachname, Email, hashedPassword, Brokername]
         );
 
-        res.status(201).json({ message: 'Benutzer erstellt', UserID: result.insertId });
+        res.status(201).json({ message: 'Benutzer erstellt', UserID: result.insertId }); //201: Request Successful
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -240,7 +240,7 @@ app.delete('/user/:id', (req, res) => {
         }
 
         const clientCount = results[0].clientCount;
-
+        //Wenn noch Clients vorhanden sind, ist löschen nicht möglich
         if (clientCount > 0) {
             return res.status(400).json({
                 error: 'User kann nicht gelöscht werden, solange noch Clients mit ihm verknüpft sind',
@@ -265,7 +265,7 @@ app.delete('/user/:id', (req, res) => {
 app.delete('/client/:id', (req, res) => {
     const clientId = req.params.id;
 
-    // Lösche den Client, Feinstaubwerte werden automatisch gelöscht (ON DELETE CASCADE)
+    // Lösche den Client, Feinstaubwerte werden automatisch gelöscht (ON DELETE CASCADE in DB)
     db.query('DELETE FROM client WHERE ClientID = ?', [clientId], (err, results) => {
         if (err) {
             res.status(500).json({ error: err.message });
@@ -288,7 +288,7 @@ app.get('/feinstaubwerte/client/:ClientID', (req, res) => {
         return res.status(400).json({ error: 'Ungültige ClientID.' });
     }
 
-    // SQL-Abfrage
+    // SQL-Abfrage und sortiert absteigend nach Zeit
     db.query(
         'SELECT * FROM feinstaubwert WHERE ClientID = ? ORDER BY Zeitstempel DESC',
         [ClientID],
@@ -310,6 +310,7 @@ app.get('/feinstaubwerte/client/:ClientID', (req, res) => {
 // GET Feinstaubdaten nach Ort
 app.get('/feinstaub/ort/:ort', (req, res) => {
     const ort = req.params.ort; // Ort aus den URL-Parametern
+    //Abfrage mit INNER JOIN, da der Ort in der Client-Tabelle steht
     const sql = `
         SELECT f.WertID, f.PM1.0, f.PM2.5, f.PM10, f.Zeitstempel, c.Ort 
         FROM feinstaubwert AS f
