@@ -1,24 +1,29 @@
 const express = require('express');
 const mysql = require('mysql2');
-const bodyParser = require('body-parser');
+const bodyParser = require('body-parser'); //Für JSON-Body-Parsing
 const rateLimit = require('express-rate-limit'); //Für Rate-Limiting
 const config = require('./config'); // Importiere die Konfiguration
 const bcrypt = require('bcrypt'); // Für Passwort-Hashing
+const cors = require('cors'); //Für Cross-Origin Resource Sharing
+
 
 // App initialisieren
 const app = express();
+
 app.use(bodyParser.json());
 
-// Datenbankverbindung
-const db = mysql.createConnection(config.db); // Nutze config.db für die Verbindung, um DB-Verbindung zu verstecken
+// Standard-CORS-Konfiguration: Erlaubt Anfragen von allen Ursprüngen
+app.use(cors());
 
-db.connect((err) => {
-    if (err) {
-        console.error('Fehler beim Verbinden mit der Datenbank:', err.message);
-    } else {
-        console.log('Mit der Datenbank verbunden!');
-    }
-});
+//Pfad:
+const BASE_PATH = process.env.BASE_PATH || '/htl/smart_sensor_netz/';
+const router = express.Router();
+app.use(BASE_PATH, router);
+
+
+// Datenbankverbindung
+const db = mysql.createPool(config.db); // Nutze config.db für die Verbindung
+
 
 // --- RATE LIMITING gegen DoS-Angriffe
 const limiter = rateLimit({
@@ -26,7 +31,6 @@ const limiter = rateLimit({
     max: 100, // Maximal 100 Anfragen pro IP
     message: 'Zu viele Anfragen von dieser IP. Bitte versuchen Sie es später erneut.',
 });
-
 app.use(limiter);
 
 
