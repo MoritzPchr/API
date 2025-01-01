@@ -5,7 +5,8 @@ const rateLimit = require('express-rate-limit'); //Für Rate-Limiting
 const config = require('./config'); // Importiere die Konfiguration
 const bcrypt = require('bcrypt'); // Für Passwort-Hashing
 const cors = require('cors'); //Für Cross-Origin Resource Sharing
-
+const jwt = require('jsonwebtoken');  //für den Token
+const crypto = require('crypto'); //
 
 // App initialisieren
 const app = express();
@@ -373,24 +374,20 @@ app.post('/register', (req, res) => {
     });
 });
 
-
 // POST Login
 app.post('/login', (req, res) => {
     const { Email, Passwort } = req.body;
 
     // SQL-Abfrage, um den Benutzer anhand der E-Mail zu finden
-    const sql = 'SELECT UserID, Vorname, Nachname, Email, Passwort FROM user WHERE Email = ?';
-
+    const sql = 'SELECT UserID, Email, Passwort FROM user WHERE Email = ?';
     db.query(sql, [Email], (err, results) => {
         if (err) {
             return res.status(500).json({ error: 'Interner Serverfehler' });
         }
 
-        // Prüfen, ob der Benutzer existiert
         if (results.length === 0) {
             return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
         }
-
         const user = results[0];
 
         // Passwort prüfen
@@ -403,14 +400,19 @@ app.post('/login', (req, res) => {
                 return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
             }
 
-            // Erfolgreiche Anmeldung
+            // Dynamisch generierten geheimen Schlüssel erzeugen
+            const secretKey = crypto.randomBytes(64).toString('hex');
+            // Token erstellen
+            const token = jwt.sign({ userId: user.UserID }, secretKey, { expiresIn: '1h' });
+
+            // Token und UserID zurückgeben
             res.json({
-                message: 'Login erfolgreich',
+                token,
+                userId: user.UserID,
             });
         });
     });
 });
-
 
 
 
